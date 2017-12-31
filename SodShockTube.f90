@@ -1,5 +1,6 @@
 module SodShockTubeModule
     use NumberKinds
+    use Mesh
     implicit none
     
     !--------------------------------------------------
@@ -27,6 +28,16 @@ module SodShockTubeModule
     real(KREAL) :: xSpacing
     integer(KINT), parameter :: POINTS_NUM = 100_KINT
     integer(KINT), parameter :: IXMIN = 1 , IXMAX = POINTS_NUM !cell index range
+
+    !--------------------------------------------------
+    !flow field
+    !--------------------------------------------------
+    !index method
+    !     ----------------
+    !  (i)|      (i)     |(i+1)
+    !     ----------------
+    type(CellCenter) :: ctr(IXMIN-1:IXMAX+1) !cell center (with ghost cell)
+    type(CellInterface) :: vface(IXMIN:IXMAX+1) !vertical cell interfaces
 
     !initial value
     real(KREAL), parameter :: VARS_LEFT(3) = (/1.0_KREAL,0.0_KREAL,2.5_KREAL/) !left: density, x-momentum,total energy

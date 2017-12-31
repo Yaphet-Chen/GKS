@@ -31,25 +31,9 @@ module Mesh
         real(KREAL) :: flux(3) !mass flux, x momentum flux, energy flux
     end type CellInterface
 end module Mesh
-    
-module ControlData
-    use Mesh
-    use WoodwardColellaModule
-    implicit none
-
-    !--------------------------------------------------
-    !flow field
-    !--------------------------------------------------
-    !index method
-    !     ----------------
-    !  (i)|      (i)     |(i+1)
-    !     ----------------
-    type(CellCenter), allocatable, dimension(:) :: ctr !cell centers
-    type(CellInterface), allocatable, dimension(:) :: vface !vertical interfaces
-end module ControlData
 
 module Initialization
-    use ControlData
+    use WoodwardColellaModule
     implicit none
     
     contains
@@ -69,10 +53,7 @@ module Initialization
             real(KREAL), intent(inout) :: dx
             integer(KINT) :: i
 
-            !allocation
-            allocate(ctr(IXMIN-1:IXMAX+1)) !cell center (with ghost cell)
-            allocate(vface(IXMIN:IXMAX+1)) !vertical and horizontal cell interface
-            !cell length and area
+            !cell length
             dx = (right-left)/(IXMAX-IXMIN+1)
 
             !cell center (with ghost cell)
@@ -150,7 +131,6 @@ end module Initialization
 !--------------------------------------------------
 module Solver
     use ConstantVariables
-    use Mesh
     use Initialization
     implicit none
 
@@ -158,7 +138,7 @@ module Solver
         !--------------------------------------------------
         !>convert conservative variables to primary variables
         !>@param[in] w           :conservative variables
-        !>@return    GetPrimary :conservative variables
+        !>@return    GetPrimary  :primitive variables
         !--------------------------------------------------
         function GetPrimary(w)
             real(KREAL), intent(in) :: w(3)
@@ -212,12 +192,13 @@ module Solver
         subroutine CalcFlux(cell_L,face,cell_R)
             type(CellCenter), intent(in) :: cell_L, cell_R
             type(CellInterface), intent(inout) :: face
-            real(KREAL) :: wL(3), primL(3)
-            real(KREAL) :: wR(3), primR(3)
+            real(KREAL) :: wL(3), primL(3), UL, erL, EL
+            real(KREAL) :: wR(3), primR(3), UR, erR, ER
             real(KREAL) :: lamL, lamR
 
             wL = cell_L%vars; wR = cell_R%vars
             primL = GetPrimary(wL); primR = GetPrimary(wR)
+            ! UL = primL(2); UR = primR(2)
             lamL = GetLambda(wL); lamR = GetLambda(wR)
 
             face%flux(1) = wL(1)*(HALF*primL(2)*erfc(-sqrt(lamL)*primL(2))+HALF*exp(-lamL*primL(2)**2)/sqrt(PI*lamL)) &
@@ -226,7 +207,15 @@ module Solver
                         +wR(1)*(HALF*(primR(2)**2+HALF/lamR)*erfc(sqrt(lamR)*primR(2))-HALF*primR(2)*exp(-lamR*primR(2)**2)/sqrt(PI*lamR))
             face%flux(3) = wL(1)*(QUATER*primL(2)*(primL(2)**2+HALF*(CK+3)/lamL)*erfc(-sqrt(lamL)*primL(2))+QUATER*(primL(2)**2+HALF*(CK+2)/lamL)*exp(-lamL*primL(2)**2)/sqrt(PI*lamL)) &
                         +wR(1)*(QUATER*primR(2)*(primR(2)**2+HALF*(CK+3)/lamR)*erfc(sqrt(lamR)*primR(2))-QUATER*(primR(2)**2+HALF*(CK+2)/lamR)*exp(-lamR*primR(2)**2)/sqrt(PI*lamR))
-            
+
+            ! erL = erfc(-sqrt(lamL)*UL); erR = erfc(sqrt(lamR)*UR)
+            ! EL = exp(-lamL*UL**2)/sqrt(PI*lamL); ER = exp(-lamR*UR**2)/sqrt(PI*lamR)
+            ! face%flux(1) = wL(1)*(UL/2.0*erL+0.5*EL) &
+            !                 +wR(1)*(UR/2.0*erR-0.5*ER)
+            ! face%flux(2) =  wL(1)*((UL**2/2.0+1.0/(4.0*lamL))*erL+UL/2.0*EL) &
+            !                 +wR(1)*((UR**2/2.0+1/(4.0*lamR))*erR-UR/2.0*ER)
+            ! face%flux(3) =  wL(1)*((UL**3/4.0+(CK+3)*UL/(8.0*lamL))*erL+(UL**2/4.0+(CK+2)/(8.0*lamL))*EL) &
+            !                 +wR(1)*((UR**3/4.0+(CK+3)*UR/(8.0*lamR))*erR-(UR**2/4.0+(CK+2)/(8.0*lamR))*ER)
             contains
                 function GetLambda(w)
                     real(KREAL), intent(in) :: w(3)
@@ -249,11 +238,14 @@ module Solver
 
         subroutine Update()
             integer(KINT) :: i
-           
+            real(KREAL) :: sigma
+
+            sigma = dt/xSpacing
             do i=IXMIN,IXMAX
-                ctr(i)%vars = ctr(i)%vars+dt/xSpacing*(vface(i)%flux-vface(i+1)%flux)
+                ctr(i)%vars = ctr(i)%vars+sigma*(vface(i)%flux-vface(i+1)%flux)
             end do
-            ctr(IXMIN)%vars = ctr(IXMIN+2)%vars; ctr(IXMAX)%vars = ctr(IXMAX-2)%vars !reflecting boundary conditions at both sides
+            ctr(IXMIN-1)%vars = ctr(IXMIN)%vars; ctr(IXMAX+1)%vars = ctr(IXMAX)%vars
+            ctr(IXMIN-1)%vars(2) = -ctr(IXMIN-1)%vars(2); ctr(IXMAX+1)%vars(2) = -ctr(IXMAX+1)%vars(2) ! Reflecting boundary conditions at both sides
         end subroutine Update
 end module Solver
 
@@ -305,13 +297,13 @@ end module Writer
 !>main program
 !--------------------------------------------------
 program KFVS_1st_1D
-    use Initialization
     use Solver
     use Writer
     implicit none
 
     !initialization
     call Init()
+    call output()
 
     !open file and write header
     open(unit=HSTFILE,file=HSTFILENAME,status="replace",action="write") !open history file
@@ -322,7 +314,7 @@ program KFVS_1st_1D
         call TimeStep() !calculate time step
         call Evolution() !calculate flux across the interfaces
         call Update() !Update cell averaged value
-
+        
         !check if output
         if (simTime>=MAX_TIME .or. iter>=MAX_ITER) exit
 
