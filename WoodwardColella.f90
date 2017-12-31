@@ -5,10 +5,10 @@ module WoodwardColellaModule
     !--------------------------------------------------
     !variables to control the simulation
     !--------------------------------------------------
-    real(KREAL), parameter :: CFL = 0.5_KREAL !CFL number
+    real(KREAL), parameter :: CFL = 0.95_KREAL !CFL number
     real(KREAL) :: simTime = 0.0_KREAL !current simulation time
-    real(KREAL), parameter :: MAX_TIME = 1.0_KREAL !maximum simulation time
-    integer(KINT), parameter :: MAX_ITER = 10_KINT
+    real(KREAL), parameter :: MAX_TIME = 0.038_KREAL !maximum simulation time
+    integer(KINT), parameter :: MAX_ITER = 1000_KINT
     integer(KINT) :: iter = 1_KINT !number of iteration
     real(KREAL) :: dt !global time step
     
@@ -19,7 +19,7 @@ module WoodwardColellaModule
     integer,parameter :: RSTFILE = 21 !result file ID
 
     !gas
-    integer(KINT), parameter :: CK = 3 !internal degree of freedom, here 3 denotes monoatomic gas
+    integer(KINT), parameter :: CK = 4 !internal degree of freedom, here 4 denotes diaatomic gas
     real(KREAL) :: gamma !ratio of specific heat
 
     !geometry

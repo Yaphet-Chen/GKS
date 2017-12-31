@@ -58,7 +58,7 @@ module Initialization
         !--------------------------------------------------
         subroutine Init()  
             call InitGeometry(START_POINT,END_POINT,POINTS_NUM,xSpacing) !initialize the geometry
-            !call initData(VARS_LEFT,VARS_RIGHT,MID_POINT) !set the initial condition
+            ! call initData(VARS_LEFT,VARS_RIGHT,MID_POINT) !set the initial condition
             call initDataTwoPoints(VARS_LEFT,VARS_MID,VARS_RIGHT,MID_POINT_1,MID_POINT_2) !set the initial condition
             gamma = GetGamma(CK)
         end subroutine Init
@@ -253,7 +253,7 @@ module Solver
             do i=IXMIN,IXMAX
                 ctr(i)%vars = ctr(i)%vars+dt/xSpacing*(vface(i)%flux-vface(i+1)%flux)
             end do
-            ctr(IXMIN)%vars = ctr(IXMIN+1)%vars; ctr(IXMAX)%vars = ctr(IXMAX-1)%vars
+            ctr(IXMIN)%vars = ctr(IXMIN+2)%vars; ctr(IXMAX)%vars = ctr(IXMAX-2)%vars !reflecting boundary conditions at both sides
         end subroutine Update
 end module Solver
 
