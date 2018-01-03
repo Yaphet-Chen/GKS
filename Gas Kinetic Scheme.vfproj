@@ -27,7 +27,7 @@
 		<Filter Name="Header Files" Filter="fi;fd"/>
 		<Filter Name="Resource Files" Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe"/>
 		<Filter Name="Source Files" Filter="f90;for;f;fpp;ftn;def;odl;idl">
-		<File RelativePath=".\KFVS_1st_1D.f90"/>
+		<File RelativePath=".\GKS_1st_1D.f90"/>
 		<File RelativePath=".\NumberKinds.f90"/>
 		<File RelativePath=".\SjogreenSupersonicExpansion.f90"/>
 		<File RelativePath=".\SodShockTube.f90"/>
