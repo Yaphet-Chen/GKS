@@ -34,7 +34,7 @@ end module Mesh
 
 module Initialization
     use ConstantVariables
-    use SjogreenSupersonicExpansionModule
+    use StationaryShockModule
     implicit none
     
     contains
@@ -198,7 +198,7 @@ module Solver
             real(KREAL)                                 :: wR(3), primR(3)
             real(KREAL)                                 :: lamL, lamR
             real(KREAL)                                 :: UL, UR, erL, erR, EL, ER
-            real(KREAL)                                 :: faceVars(3), facePrim(3), faceLam, eqFlux(3), nonEqFlux(3)
+            real(KREAL)                                 :: faceVars(3), facePrim(3), faceLam, faceU, eqFlux(3), nonEqFlux(3)
             
             wL = cell_L%vars; wR = cell_R%vars
             primL = GetPrimary(wL); primR = GetPrimary(wR)
@@ -208,26 +208,26 @@ module Solver
             EL = exp(-lamL*UL**2)/sqrt(PI*lamL); ER = exp(-lamR*UR**2)/sqrt(PI*lamR)
 
             ! non-equilibrium flux calculation
-            nonEqFlux(1) = wL(1)*(UL/2.0*erL+0.5*EL) &
-                            +wR(1)*(UR/2.0*erR-0.5*ER)
-            nonEqFlux(2) =  wL(1)*((UL**2/2.0+1.0/(4.0*lamL))*erL+UL/2.0*EL) &
-                            +wR(1)*((UR**2/2.0+1/(4.0*lamR))*erR-UR/2.0*ER)
-            nonEqFlux(3) =  wL(1)*((UL**3/4.0+(CK+3)*UL/(8.0*lamL))*erL+(UL**2/4.0+(CK+2)/(8.0*lamL))*EL) &
-                            +wR(1)*((UR**3/4.0+(CK+3)*UR/(8.0*lamR))*erR-(UR**2/4.0+(CK+2)/(8.0*lamR))*ER)
+            nonEqFlux(1) = wL(1)*(HALF*UL*erL+HALF*EL) &
+                            +wR(1)*(HALF*UR*erR-HALF*ER)
+            nonEqFlux(2) =  wL(1)*((HALF*UL**2+QUATER/lamL)*erL+HALF*UL*EL) &
+                            +wR(1)*((HALF*UR**2+QUATER/lamR)*erR-HALF*UR*ER)
+            nonEqFlux(3) =  wL(1)*(QUATER*(UL**3+HALF*(CK+3)*UL/lamL)*erL+QUATER*(UL**2+HALF*(CK+2)/lamL)*EL) &
+                            +wR(1)*(QUATER*(UR**3+HALF*(CK+3)*UR/lamR)*erR-QUATER*(UR**2+HALF*(CK+2)/lamR)*ER)
 
             ! equilibrium satate at the cell interface
-            faceVars(1) = wL(1)*HALF*erfc(-sqrt(lamL)*primL(2))+wR(2)*HALF*erfc(sqrt(lamR)*primR(2))
-            faceVars(2) = wL(1)*(HALF*primL(2)*erfc(-sqrt(lamL)*primL(2))+HALF*exp(-lamL*primL(2)**2)/sqrt(PI*lamL)) &
-                        +wR(1)*(HALF*primR(2)*erfc(sqrt(lamR)*primR(2))-HALF*exp(-lamR*primR(2)**2)/sqrt(PI*lamR))
-            faceVars(3) = wL(1)*(QUATER*(primL(2)**2+(CK+1)*HALF/lamL)*erfc(-sqrt(lamL)*primL(2))+QUATER*primL(2)*exp(-lamL*primL(2)**2)/sqrt(PI*lamL)) &
-                        +wR(1)*(QUATER*(primR(2)**2+(CK+1)*HALF/lamR)*erfc(sqrt(lamR)*primR(2))-QUATER*primR(2)*exp(-lamR*primR(2)**2)/sqrt(PI*lamR))
+            faceVars(1) = wL(1)*HALF*erL+wR(1)*HALF*erR
+            faceVars(2) = wL(1)*(HALF*UL*erL+HALF*EL)+wR(1)*(HALF*UR*erR-HALF*ER)
+            faceVars(3) = wL(1)*(QUATER*(UL**2+HALF*(CK+1)/lamL)*erL+QUATER*UL*EL) &
+                        +wR(1)*(QUATER*(UR**2+HALF*(CK+1)/lamR)*erR-QUATER*UR*ER)
 
-            facePrim = GetPrimary(faceVars); faceLam = GetLambda(faceVars)
-            
             ! equilibrium flux at the cell interface
-            eqFlux(1) = facePrim(1)*facePrim(2)
-            eqFlux(2) = facePrim(1)*(facePrim(2)**2+HALF/faceLam)
-            eqFlux(3) = facePrim(1)*HALF*facePrim(2)*(facePrim(2)**2+(CK+3)*HALF/faceLam)
+            facePrim = GetPrimary(faceVars); faceLam = GetLambda(faceVars)
+            faceU = facePrim(2)
+            
+            eqFlux(1) = faceVars(1)*faceU
+            eqFlux(2) = faceVars(1)*(faceU**2+HALF/faceLam)
+            eqFlux(3) = faceVars(1)*HALF*faceU*(faceU**2+(CK+3)*HALF/faceLam)
 
             ! the final fluxes across the cell interface
             face%flux = (1.0_KREAL-locEta)*eqFlux+locEta*nonEqFlux
@@ -290,7 +290,8 @@ module Writer
             !--------------------------------------------------
             !open result file and write header
             open(unit=RSTFILE,file=RSTFILENAME,status="replace",action="write")
-            write(RSTFILE,*) "VARIABLES = x, Density, U, Pressure"
+            ! write(RSTFILE,*) "VARIABLES = x, Density, U, Pressure"
+            write(RSTFILE,*) "VARIABLES = x, Density, U, Pressure, Momentum"
             write(RSTFILE,*) 'ZONE  T="Time: ',simTime,'", I = ',IXMAX-IXMIN+1,', DATAPACKING=BLOCK'
 
             !write geometry (cell-centered)
@@ -300,7 +301,10 @@ module Writer
             do i=1,3
                 write(RSTFILE,"(6(ES23.16,2X))") solution(i,IXMIN:IXMAX)
             end do
-    
+
+            !write momentum
+            write(RSTFILE,"(6(ES23.16,2X))") ctr(IXMIN:IXMAX)%vars(2)
+
             !close file
             close(RSTFILE)
             deallocate(solution)

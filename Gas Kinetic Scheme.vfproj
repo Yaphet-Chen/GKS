@@ -30,6 +30,9 @@
 		<File RelativePath=".\GKS_1st_1D.f90"/>
 		<File RelativePath=".\NumberKinds.f90"/>
 		<File RelativePath=".\SjogreenSupersonicExpansion.f90"/>
+		<File RelativePath=".\SlowlyMovingShocks.f90"/>
 		<File RelativePath=".\SodShockTube.f90"/>
+		<File RelativePath=".\StationaryShock.f90"/>
+		<File RelativePath=".\StrongRarefactionWave.f90"/>
 		<File RelativePath=".\WoodwardColella.f90"/></Filter></Files>
 	<Globals/></VisualStudioProject>
