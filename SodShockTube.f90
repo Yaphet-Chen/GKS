@@ -24,8 +24,8 @@ module SodShockTubeModule
 
     !gas
     integer(KINT), parameter            :: CK = 4 !internal degree of freedom, here 4 denotes diatomic gas
-    real(KREAL)                         :: gamma !ratio of specific heat
-
+    real(KREAL), parameter              :: gamma = real(k+3,KREAL)/real(k+1,KREAL) !ratio of specific heat
+    
     !geometry
     real(KREAL), parameter              :: START_POINT = 0.0_KREAL, MID_POINT = 0.5_KREAL, END_POINT = 1.0_KREAL
     real(KREAL)                         :: xSpacing

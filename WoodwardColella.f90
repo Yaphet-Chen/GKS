@@ -24,7 +24,7 @@ module WoodwardColellaModule
 
     !gas
     integer(KINT), parameter            :: CK = 4 !internal degree of freedom, here 4 denotes diaatomic gas
-    real(KREAL)                         :: gamma !ratio of specific heat
+    real(KREAL), parameter              :: gamma = real(k+3,KREAL)/real(k+1,KREAL) !ratio of specific heat
 
     !geometry
     real(KREAL), parameter              :: START_POINT = 0.0_KREAL, MID_POINT_1 = 0.1_KREAL, MID_POINT_2 = 0.9_KREAL, END_POINT = 1.0_KREAL

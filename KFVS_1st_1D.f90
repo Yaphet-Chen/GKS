@@ -44,7 +44,6 @@ module Initialization
             call InitGeometry(START_POINT,END_POINT,POINTS_NUM,xSpacing) !initialize the geometry
             ! call initData(VARS_LEFT,VARS_RIGHT,MID_POINT) !set the initial condition
             call initDataTwoPoints(VARS_LEFT,VARS_MID,VARS_RIGHT,MID_POINT_1,MID_POINT_2) !set the initial condition
-            gamma = GetGamma(CK)
         end subroutine Init
 
         subroutine InitGeometry(left,right,num,dx)
@@ -112,17 +111,6 @@ module Initialization
                 ctr(i)%vars = rightVec
             enddo
         end subroutine initDataTwoPoints
-        !--------------------------------------------------
-        !>obtain ratio of specific heat
-        !>@param[in] ck        :internal degree of freedom
-        !>@return    GetGamma :ratio of specific heat
-        !--------------------------------------------------
-        function GetGamma(k)
-            integer(KINT), intent(in) :: k
-            real(KREAL) :: GetGamma
-
-            GetGamma = real(k+3,KREAL)/real(k+1,KREAL)
-        end function GetGamma
 end module Initialization
 
 

@@ -76,7 +76,7 @@ void sod1d() // a sod test case example
 {
 	//for a specific problem, we need specify some
 	//start parameters
-	//the folloing block1d contains most of important simulation parameters in 1D computation
+	//the following block1d contains most of important simulation parameters in 1D computation
 	Block1d block;
 	//let's first do mesh
 	block.uniform = true; //is it uniform mesh
