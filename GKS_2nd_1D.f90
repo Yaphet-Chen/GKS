@@ -49,7 +49,7 @@ end module Mesh
 
 module Initialization
     use ConstantVariables
-    use StrongRarefactionWaveModule
+    use SodShockTubeModule
     implicit none
     
     contains
@@ -153,6 +153,7 @@ module Solver
             GetPrimary(2) = w(2)/w(1)
             GetPrimary(3) = w(1)/(2.0_KREAL*GetLambda(w))
         end function GetPrimary
+
         function GetLambda(w)
             real(KREAL), intent(in)             :: w(3)
             real(KREAL)                         :: GetLambda
@@ -198,6 +199,7 @@ module Solver
                 dt = min(dt,CFL*ctr(i)%length/(vMax+TINYNUM))
             end do 
         end subroutine TimeStep
+
         subroutine Boundary()
             integer(KINT) :: i
             do i=1,GHOST_NUM
@@ -205,30 +207,29 @@ module Solver
                 ! ctr(IXMIN-i)%conVars(2) = -ctr(IXMIN-i)%conVars(2); ctr(IXMAX+i)%conVars(2) = -ctr(IXMAX+i)%conVars(2) !Reflecting boundary conditions at both sides
             enddo
         end subroutine Boundary
+
         subroutine IntraCellReconstruction()
             integer(KINT) :: i
             do i=IXMIN-1,IXMAX+1
-                ! call VanleerLimiter(ctr(i-1),ctr(i),ctr(i+1))
-                ctr(i)%leftVars = ctr(i)%conVars; ctr(i)%rightVars = ctr(i)%conVars !first order reconstruction, no limiter
+                call VanleerLimiter(ctr(i-1),ctr(i),ctr(i+1))
+                ! ctr(i)%leftVars = ctr(i)%conVars; ctr(i)%rightVars = ctr(i)%conVars !first order reconstruction, no limiter
             enddo 
         end subroutine IntraCellReconstruction
+
         subroutine VanleerLimiter(leftCell,midCell,rightCell)
             type(IntraCell), intent(in) :: leftCell, rightCell
             type(IntraCell), intent(inout) :: midCell
             real(KREAL), dimension(3) :: splus, sminus
-            integer(KINT) :: i
 
-            do i=1,3
-                splus(i) = (rightCell%conVars(i)-midCell%conVars(i))/((rightCell%length+midCell%length)/2.0_KREAL)
-                sminus(i) = (midCell%conVars(i)-leftCell%conVars(i))/((midCell%length+leftCell%length)/2.0_KREAL)
-                if (splus(i)*sminus(i)>0) then
-                    midCell%leftVars(i) = midCell%conVars(i)-midCell%length*splus(i)*sminus(i)/(splus(i)+sminus(i))
-                    midCell%rightVars(i) = midCell%conVars(i)+midCell%length*splus(i)*sminus(i)/(splus(i)+sminus(i))
-                else
-                    midCell%leftVars(i) = midCell%conVars(i)
-                    midCell%rightVars(i) = midCell%conVars(i)
-                endif
-            enddo
+            integer(KINT) :: i
+            real(KREAL), parameter :: UP = 1.0_KREAL
+
+            splus = (rightCell%conVars-midCell%conVars)/(HALF*(rightCell%length+midCell%length))
+            sminus = (midCell%conVars-leftCell%conVars)/(HALF*(midCell%length+leftCell%length))
+            midCell%leftVars = midCell%conVars-HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*abs(splus)*abs(sminus)/(abs(splus)+abs(sminus)+TINYNUM)
+            midCell%rightVars = midCell%conVars+HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*abs(splus)*abs(sminus)/(abs(splus)+abs(sminus)+TINYNUM)
+            if (GetLambda(midCell%leftVars)<=0.0_KREAL) midCell%leftVars = midCell%conVars
+            if (GetLambda(midCell%rightVars)<=0.0_KREAL) midCell%rightVars = midCell%conVars
         end subroutine VanleerLimiter
         !--------------------------------------------------
         !>flux calculation
@@ -247,20 +248,20 @@ module Solver
             vall(1) = leftCell%rightVars(1)
             vall(2) = leftCell%rightVars(2)/leftCell%rightVars(1)
             vall(3) = GetLambda(leftCell%rightVars)
-            ! tempb = (leftCell%rightVars-leftCell%conVars)/(vall(1)*HALF*leftCell%length)
-            ! call SolveEquMAB(al,tempb,vall)
-
+            tempb = (leftCell%rightVars-leftCell%conVars)/(vall(1)*HALF*leftCell%length)
+            call SolveEquMAB(al,tempb,vall)
+            
             valr(1) = rightCell%leftVars(1)
             valr(2) = rightCell%leftVars(2)/rightCell%leftVars(1)
             valr(3) = GetLambda(rightCell%leftVars)
-            ! tempb = (rightCell%conVars-rightCell%leftVars)/(valr(1)*HALF*rightCell%length)
-            ! call SolveEquMAB(ar,tempb,valr)
+            tempb = (rightCell%conVars-rightCell%leftVars)/(valr(1)*HALF*rightCell%length)
+            call SolveEquMAB(ar,tempb,valr)
 
-            ! tempb = matmul(MatrixWithU(vall,-1),al)
-            ! call SolveEquMAB(AAL,tempb,vall)
+            tempb = -matmul(MatrixWithU(vall,-1),al)
+            call SolveEquMAB(AAL,tempb,vall)
             
-            ! tempb = matmul(MatrixWithU(valr,1),ar)
-            ! call SolveEquMAB(AAR,tempb,valr)
+            tempb = -matmul(MatrixWithU(valr,1),ar)
+            call SolveEquMAB(AAR,tempb,valr)
 
             leftUtable = ConstructUTable(vall,-1); rightUtable = ConstructUTable(valr,1)
             midConvars(1) = vall(1)*leftUtable(0)+valr(1)*rightUtable(0)
@@ -272,49 +273,58 @@ module Solver
             val0(2) = midConvars(2)/midConvars(1)
             val0(3) = GetLambda(midConvars)
 
-            ! tempb = (midConvars-leftCell%conVars)/(val0(1)*HALF*leftCell%length)
-            ! call SolveEquMAB(al0,tempb,val0)
-            ! tempb = (rightCell%conVars-midConvars)/(val0(1)*HALF*rightCell%length)
-            ! call SolveEquMAB(ar0,tempb,val0)
+            tempb = (midConvars-leftCell%conVars)/(val0(1)*HALF*leftCell%length)
+            call SolveEquMAB(al0,tempb,val0)
+            tempb = (rightCell%conVars-midConvars)/(val0(1)*HALF*rightCell%length)
+            call SolveEquMAB(ar0,tempb,val0)
 
-            ! tau = GetTau(vall,val0,valr)
-            ! eta = exp(-dt/tau)
-            ! r(0) = dt-tau*(1.0_KREAL-eta)
-            ! r(1) = -(1.0_KREAL-eta)/r(0)
-            ! r(2) = (-dt+2.0_KREAL*tau*(1.0_KREAL-eta)-dt*eta)/r(0)
-            ! r(3) = (1.0_KREAL-eta)/r(0)
-            ! r(4) = (dt*eta-tau*(1.0_KREAL-eta))/r(0)
-            ! r(5) = tau*(1.0_KREAL-eta)/r(0)
+            tau = GetTau(vall,val0,valr)
+            eta = exp(-dt/tau)
+            r(0) = dt-tau*(1.0_KREAL-eta)
+            r(1) = -(1.0_KREAL-eta)/r(0)
+            r(2) = (-dt+2.0_KREAL*tau*(1.0_KREAL-eta)-dt*eta)/r(0)
+            r(3) = (1.0_KREAL-eta)/r(0)
+            r(4) = (dt*eta-tau*(1.0_KREAL-eta))/r(0)
+            r(5) = tau*(1.0_KREAL-eta)/r(0)
 
-            ! tempb = r(1)*VectorWithoutU(val0,0) &
-            !         +r(2)*(matmul(MatrixWithU(val0,-1),al0)+matmul(MatrixWithU(val0,1),ar0)) &
-            !         +r(3)*(VectorWithoutU(vall,-1)+VectorWithoutU(valr,1)) &
-            !         +r(4)*(matmul(MatrixWithU(vall,-1),al)+matmul(MatrixWithU(valr,1),ar)) &
-            !         +r(5)*(matmul(MatrixWithU(vall,-1),al)+matmul(MatrixWithoutU(vall,-1),AAL) &
-            !                 +matmul(MatrixWithU(valr,1),ar)+matmul(MatrixWithoutU(valr,1),AAR))
-            ! call SolveEquMAB(AA0,tempb,val0)
+            tempb = r(1)*VectorWithoutU(val0,0) &
+                    +r(2)*(matmul(MatrixWithU(val0,-1),al0)+matmul(MatrixWithU(val0,1),ar0)) &
+                    +r(3)*(VectorWithoutU(vall,-1)+VectorWithoutU(valr,1)) &
+                    +r(4)*(matmul(MatrixWithU(vall,-1),al)+matmul(MatrixWithU(valr,1),ar)) &
+                    +r(5)*(matmul(MatrixWithU(vall,-1),al)+matmul(MatrixWithoutU(vall,-1),AAL) &
+                            +matmul(MatrixWithU(valr,1),ar)+matmul(MatrixWithoutU(valr,1),AAR))
+            call SolveEquMAB(AA0,tempb,val0)
 
-            ! t(1) = dt+tau*(eta-1.0_KREAL)
-            ! t(2) = -tau*(dt+2.0_KREAL*tau*(eta-1)+dt*eta)
-            ! t(3) = HALF*dt**2-tau*dt-tau**2*(eta-1.0_KREAL)
-            ! t(4) = -tau*(eta-1.0_KREAL)
-            ! t(5) = tau*dt*eta+tau**2*(eta-1.0_KREAL)
-            ! t(6) = tau**2*(eta-1.0_KREAL)
+            t(1) = dt+tau*(eta-1.0_KREAL)
+            t(2) = -tau*(dt+2.0_KREAL*tau*(eta-1)+dt*eta)
+            t(3) = HALF*dt**2-tau*dt-tau**2*(eta-1.0_KREAL)
+            t(4) = -tau*(eta-1.0_KREAL)
+            t(5) = tau*dt*eta+tau**2*(eta-1.0_KREAL)
+            t(6) = tau**2*(eta-1.0_KREAL)
 
-            eta = HALF
-            t(1) = dt*(1-eta)
-            t(4) = dt*eta
+            ! t(4) = dt
             ! t(5) = -HALF*dt**2
 
             face%flux = &
                         t(1)*val0(1)*VectorWithU(val0,0) &
-                        ! +t(2)*val0(1)*(matmul(MatrixWith2U(val0,-1),al0)+matmul(MatrixWith2U(val0,1),ar0)) &
-                        ! +t(3)*val0(1)*matmul(MatrixWithU(val0,0),AA0) &
-                        +t(4)*(vall(1)*VectorWithU(vall,-1)+valr(1)*VectorWithU(valr,1))
-                        ! +t(5)*(vall(1)*matmul(MatrixWith2U(vall,-1),al)+valr(1)*matmul(MatrixWith2U(valr,1),ar)) &
-                        ! +t(6)*(vall(1)*(matmul(MatrixWith2U(vall,-1),al)+matmul(MatrixWithU(vall,-1),AAL)) &
-                                ! +valr(1)*(matmul(MatrixWith2U(valr,1),ar)+matmul(MatrixWithU(valr,1),AAR)))
+                        +t(2)*val0(1)*(matmul(MatrixWith2U(val0,-1),al0)+matmul(MatrixWith2U(val0,1),ar0)) &
+                        +t(3)*val0(1)*matmul(MatrixWithU(val0,0),AA0) &
+                        +t(4)*(vall(1)*VectorWithU(vall,-1)+valr(1)*VectorWithU(valr,1)) &
+                        +t(5)*(vall(1)*matmul(MatrixWith2U(vall,-1),al)+valr(1)*matmul(MatrixWith2U(valr,1),ar)) &
+                        +t(6)*(vall(1)*(matmul(MatrixWith2U(vall,-1),al) &
+                                       +matmul(MatrixWithU( vall,-1),AAL)) &
+                              +valr(1)*(matmul(MatrixWith2U(valr, 1),ar) &
+                                       +matmul(MatrixWithU( valr, 1),AAR)))
+
         end subroutine CalcFlux
+
+        function GetTau(leftVal,midVal,rightVal) result(tau)
+            real(KREAL), dimension(3), intent(in) :: leftVal, midVal, rightVal !rho, U, lambda
+            real(KREAL) :: tau
+            
+            ! tau = MU/(HALF*midVal(1)/midVal(3))+abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))*dt
+            tau = 0.0001*dt+5.0*abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))*dt
+        end function GetTau
 
         subroutine SolveEquMAB(a,b,val)
             real(KREAL), dimension(3), intent(in) :: b, val
@@ -433,12 +443,6 @@ module Solver
             uVec(3) = HALF*(tempUtable(3)+tempUtable(1)*xi2)
         end function VectorWithU
 
-        function GetTau(leftVal,midVal,rightVal) result(tau)
-            real(KREAL), dimension(3), intent(in) :: leftVal, midVal, rightVal !rho, U, lambda
-            real(KREAL) :: tau
-            
-            tau = MU/(HALF*midVal(1)/midVal(3))+abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))*dt
-        end function GetTau
         !--------------------------------------------------
         !>calculate the flux across the interfaces
         !--------------------------------------------------
