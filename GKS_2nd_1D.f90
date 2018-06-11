@@ -212,6 +212,7 @@ contains
         integer(KINT)                                   :: i
         do i=IXMIN-1,IXMAX+1
             call VanleerLimiter(ctr(i-1),ctr(i),ctr(i+1))
+            ! call MUSCLlimiter(ctr(i-1),ctr(i),ctr(i+1))
             ! ctr(i)%leftVars = ctr(i)%conVars; ctr(i)%rightVars = ctr(i)%conVars !first order reconstruction, no limiter
         enddo 
     end subroutine IntraCellReconstruction
@@ -228,18 +229,37 @@ contains
         midCell%leftVars = midCell%conVars-HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*abs(splus)*abs(sminus)/(abs(splus)+abs(sminus)+TINYNUM)
         midCell%rightVars = midCell%conVars+HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*abs(splus)*abs(sminus)/(abs(splus)+abs(sminus)+TINYNUM)
         
+        ! avoid blow up
         if ( GetLambda(midCell%leftVars)<=TINYNUM .or. GetLambda(midCell%rightVars)<=TINYNUM ) then
             midCell%leftVars = midCell%conVars
             midCell%rightVars = midCell%conVars
         endif
     end subroutine VanleerLimiter
 
+    subroutine MUSCLlimiter(leftCell,midCell,rightCell)
+        type(IntraCell), intent(in)                     :: leftCell, rightCell
+        type(IntraCell), intent(inout)                  :: midCell
+        real(KREAL), dimension(3)                       :: splus, sminus
+        real(KREAL), parameter                          :: UP = 1.0_KREAL
+        
+        splus = (rightCell%conVars-midCell%conVars)/(HALF*(rightCell%length+midCell%length))
+        sminus = (midCell%conVars-leftCell%conVars)/(HALF*(midCell%length+leftCell%length))
+
+        midCell%leftVars = midCell%conVars-HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*min(QUATER*abs(splus+sminus),abs(splus),abs(sminus))
+        midCell%rightVars = midCell%conVars+HALF*midCell%length*(sign(UP,splus)+sign(UP,sminus))*min(QUATER*abs(splus+sminus),abs(splus),abs(sminus))
+        
+        if ( GetLambda(midCell%leftVars)<=TINYNUM .or. GetLambda(midCell%rightVars)<=TINYNUM ) then
+            midCell%leftVars = midCell%conVars
+            midCell%rightVars = midCell%conVars
+        endif
+    end subroutine MUSCLlimiter
+
     function GetTau(leftVal,midVal,rightVal) result(tau)
         real(KREAL), dimension(3), intent(in)           :: leftVal, midVal, rightVal !rho, U, lambda
         real(KREAL)                                     :: tau
 
         ! tau = MU/(HALF*midVal(1)/midVal(3))+abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/(abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))+TINYNUM)*dt
-        tau = 0.005_KREAL*dt+1.0_KREAL*abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/(abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))+TINYNUM)*dt
+        ! tau = 0.05_KREAL*dt+5.0_KREAL*abs(leftVal(1)/leftVal(3)-rightVal(1)/rightVal(3))/(abs(leftVal(1)/leftVal(3)+rightVal(1)/rightVal(3))+TINYNUM)*dt
     end function GetTau
     !--------------------------------------------------
     !>flux calculation
@@ -296,9 +316,9 @@ contains
         r(2) = (-dt+2.0_KREAL*tau*(1.0_KREAL-eta)-dt*eta)/r(0)
         r(3) = (1.0_KREAL-eta)/r(0)
         r(4) = (dt*eta-tau*(1.0_KREAL-eta))/r(0)
-        r(5) = -tau*(1.0_KREAL-eta)/r(0) !for NS
+        ! r(5) = -tau*(1.0_KREAL-eta)/r(0) !for NS
 
-        ! r(5) = 0.0_KREAL !for Euler
+        r(5) = 0.0_KREAL !for Euler
 
         tempb = r(1)*VectorWithoutU(val0,0) &
                 +r(2)*(matmul(MatrixWithU(val0,-1),al0)+matmul(MatrixWithU(val0,1),ar0)) &
@@ -313,9 +333,9 @@ contains
         t(3) = HALF*dt**2-tau*dt-tau**2*(eta-1.0_KREAL)
         t(4) = -tau*(eta-1.0_KREAL)
         t(5) = tau*dt*eta+tau**2*(eta-1.0_KREAL)
-        t(6) = tau**2*(eta-1.0_KREAL) !for NS
+        ! t(6) = tau**2*(eta-1.0_KREAL) !for NS
 
-        ! t(6) = 0 !for Euler
+        t(6) = 0 !for Euler
         
         ! KFVS 1st
         ! we should close vanleer limiter and use 1st reconstruction, otherwise there will have oscillation.
@@ -328,7 +348,7 @@ contains
 
         ! GKS 1st
         ! we should close vanleer limiter and use 1st reconstruction, otherwise there will have oscillation.
-        ! eta = 0.5_KREAL
+        ! eta = 0.2_KREAL
         ! t(1) = dt*(1.0_KREAL-eta)
         ! t(2) = 0.0_KREAL
         ! t(3) = 0.0_KREAL
@@ -489,7 +509,7 @@ contains
             ctr(i)%conVars = ctr(i)%conVars+1.0_KREAL/ctr(i)%length*(vface(i)%flux-vface(i+1)%flux)
             do j=1,3
                 if(isnan(ctr(i)%conVars(j))) then
-                    print *, ctr(i)%x, "iter:", iter
+                    print *, "location that NAN appear", ctr(i)%x, "iter:", iter
                     stop
                 endif
             enddo
@@ -536,7 +556,10 @@ contains
 
         !write momentum
         write(RSTFILE,"(6(ES23.16,2X))") ctr(IXMIN:IXMAX)%conVars(2)
-
+        
+        !internal energy e
+        ! write(RSTFILE,"(6(ES23.16,2X))") HALF*(CK+1)*(solution(3,IXMIN:IXMAX)/solution(1,IXMIN:IXMAX))
+        
         !close file
         close(RSTFILE)
         deallocate(solution)
@@ -551,13 +574,16 @@ program GKS_2nd_1D
     use Solver
     use Writer
     implicit none
-
+    ! real :: start, finish
+    
     !initialization
     call Init()
 
     !open file and write header
     open(unit=HSTFILE,file=HSTFILENAME,status="replace",action="write") !open history file
     write(HSTFILE,*) "VARIABLES = iter, simTime, dt" !write header
+
+    ! call cpu_time(start)
 
     !iteration
     do while(.true.)
@@ -579,6 +605,9 @@ program GKS_2nd_1D
         iter = iter+1
         simTime = simTime+dt
     enddo
+
+    ! call cpu_time(finish)
+    ! print '("Time = ",f6.3," seconds.")',finish-start
 
     !close history file
     close(HSTFILE)

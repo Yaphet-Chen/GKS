@@ -1,6 +1,7 @@
 # Generated Data
 *.dat
 *.hst
+*.plt
 
 # Prerequisites
 *.d

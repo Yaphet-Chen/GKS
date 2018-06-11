@@ -101,7 +101,7 @@ module WoodwardColellaModule
     real(KREAL), parameter              :: CFL = 0.5_KREAL !CFL number
     real(KREAL)                         :: simTime = 0.0_KREAL !current simulation time
     real(KREAL), parameter              :: MAX_TIME = 0.038_KREAL !maximum simulation time
-    integer(KINT), parameter            :: MAX_ITER = 2000_KINT
+    integer(KINT), parameter            :: MAX_ITER = 10000_KINT
     integer(KINT)                       :: iter = 1_KINT !number of iteration
     real(KREAL)                         :: dt !global time step
 
